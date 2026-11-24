@@ -1273,7 +1273,7 @@ function makeDefault(){
 const LOCAL=!(window.claude&&typeof window.claude.use==="function");
 const LS_KEY="minhas-financas-v2";
 /* ---- Google Drive: retorno do login e tentativa silenciosa (antes de tudo) ---- */
-const GOOGLE_CLIENT_ID="";
+const GOOGLE_CLIENT_ID="681239259252-tp0tso3opp3gc5oh1m7n76srfpt2pv1i.apps.googleusercontent.com";
 const GD_REDIRECT=location.origin+location.pathname;
 const GD_ENABLED=/^https?:$/.test(location.protocol)&&LOCAL;
 function gClientId(){if(GOOGLE_CLIENT_ID)return GOOGLE_CLIENT_ID;try{return localStorage.getItem("mf-gclient")||""}catch(_){return""}}
