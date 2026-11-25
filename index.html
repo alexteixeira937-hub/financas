@@ -1467,7 +1467,8 @@ function snapHist(s){const a=s.inv.ativos;s.inv.hist[CUR]={pat:sum(a.map(valAtua
 /* mês por tela: cada aba lembra o próprio mês por 15 min; ao entrar numa aba sem mês guardado, volta para o mês atual */
 let MKV={};try{const o=JSON.parse(sessionStorage.getItem("mf-monthv")||"{}");Object.keys(o).forEach(v=>{const sm=String(o[v]).split("|");if(/^\d{4}-\d{2}$/.test(sm[0])&&Date.now()-(+sm[1]||0)<15*60e3)MKV[v]=sm[0]})}catch(e){}
 function saveMonth(X,v){v=v||(typeof UI!=="undefined"?UI.view:"");if(!v)return;if(X===CUR)delete MKV[v];else MKV[v]=X;try{const o={};Object.keys(MKV).forEach(k=>o[k]=MKV[k]+"|"+Date.now());sessionStorage.setItem("mf-monthv",JSON.stringify(o))}catch(_){}}
-function enterView(v){if(typeof UI==="undefined")return;UI.view=v;UI.mk=MKV[v]||CUR;UI.daySel=null}
+function enterView(v){if(typeof UI==="undefined")return;UI.view=v;UI.mk=MKV[v]||CUR;UI.daySel=null;if(v==="cartoes"&&!MKV[v])cartAuto()}
+function cartAuto(){if(typeof S==="undefined"||!S.cartoes||!S.cartoes.length)return;const k=cardById(UI.cardSel)||S.cartoes[0];UI.mk=fatAbertaX(k)}
 const VIEWS=["visao","lancamentos","orcamento","fixas","cartoes","contas","patrimonio","investimentos","metas","emprestimos","guia","categorias","ajustes","viagens","desejos"];
 const TITLES={desejos:"Quero comprar",viagens:"Viagens e etiquetas",visao:"Visão geral",lancamentos:"Lançamentos",orcamento:"Teto por categoria",fixas:"Recorrências",cartoes:"Cartões e faturas",contas:"Contas e fluxo de caixa",patrimonio:"Patrimônio",investimentos:"Investimentos",metas:"Metas",emprestimos:"Empréstimos",guia:"Como organizar",categorias:"Categorias",ajustes:"Ajustes"};
 const viewFromHash=()=>{const h=(location.hash||"").replace("#","");if(VIEWS.indexOf(h)>=0)return h;try{const sv=sessionStorage.getItem("mf-view");if(VIEWS.indexOf(sv)>=0)return sv}catch(e){}return"visao"};
@@ -1494,7 +1495,7 @@ async function connectFile(){if(!FH)return;try{FHperm=await FH.requestPermission
 const FTYPES=[{description:"Dados do Minhas Finanças",accept:{"application/json":[".json"]}}];
 async function chooseNewFile(){try{const h=await window.showSaveFilePicker({suggestedName:"minhas-financas-dados.json",types:FTYPES});FH=h;FHperm="granted";await kvSet("fh",h);S.savedAt=new Date().toISOString();await writeFile();setStatus("savedfile");render()}catch(e){}}
 async function openExistingFile(){try{const r=await window.showOpenFilePicker({types:FTYPES});const h=r[0];FH=h;try{FHperm=await h.requestPermission({mode:"readwrite"})}catch(e){FHperm="prompt"}await kvSet("fh",h);await loadFromFile(true);setStatus(FHperm==="granted"?"savedfile":"needfile");render()}catch(e){}}
-window.addEventListener("beforeunload",e=>{if(LOCAL&&!LOCKED&&!UI.demo&&!lockCfg()&&(UI.status==="pending"||UI.status==="saving")){S.savedAt=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(_){}}if(UI.dirty){e.preventDefault();e.returnValue=""}});
+window.addEventListener("beforeunload",e=>{if(LOCAL&&!LOCKED&&!UI.demo&&!lockCfg()&&(UI.status==="pending"||UI.status==="saving")){if(SAVE_USER||!S.savedAt)S.savedAt=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(_){}}if(UI.dirty){e.preventDefault();e.returnValue=""}});
 
 /* ================= cópia no aparelho (com ou sem PIN) ================= */
 const TE=new TextEncoder(),TD=new TextDecoder();
@@ -1542,7 +1543,7 @@ function m3(b,l,r,ln){if(_eq(l,r))return l;if(_eq(b,l))return r;if(_eq(b,r))retu
     return ln?l:r}
   if(_isO(l)&&_isO(r)){const o={};const bb=_isO(b)?b:{};new Set(Object.keys(l).concat(Object.keys(r))).forEach(k=>{const v=m3(bb[k],l[k],r[k],ln);if(v!==undefined)o[k]=v});return o}
   return ln?l:r}
-const APP_VER="2026.11.25-1";let NOVA_VER=false,VER_CHK=0;
+const APP_VER="2026.11.25-2";let NOVA_VER=false,VER_CHK=0;
 async function checaVersao(){if(!/^https?:$/.test(location.protocol)||Date.now()-VER_CHK<20*60e3||NOVA_VER)return;VER_CHK=Date.now();try{const r=await fetch(location.pathname+"?v="+Date.now(),{cache:"no-store"});const tx=await r.text();const m=/const APP_VER="([^"]+)"/.exec(tx);if(m&&m[1]!==APP_VER){NOVA_VER=true;if(typeof render==="function"&&!UI.modal)render()}}catch(_){}}
 function gdNeedsReauth(){return GD_ENABLED&&gdCfg().on&&!!gClientId()&&!gdTok()&&navigator.onLine&&!UI.demo}
 async function gdTryReauth(){if(UI.dirty||UI.modal||document.visibilityState!=="visible")return false;let last=0;try{last=+sessionStorage.getItem("mf-gtry")||0}catch(_){}if(Date.now()-last<10*60e3)return false;try{sessionStorage.setItem("mf-gtry",String(Date.now()))}catch(_){}
@@ -1556,9 +1557,9 @@ async function gdSync(){if(!gdOn()||LOCKED||UI.demo)return;if(GD.busy){GD.again=
     if(!f){const mp=mpart({name:GD_NAME,mimeType:"application/json",description:"Dados do Minhas Finanças"},JSON.stringify(S));const r=await (await gfetch(`${GAPI}/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`,{method:"POST",headers:mp.headers,body:mp.body})).json();gdSetCfg({fileId:r.id,remoteMod:r.modifiedTime,pushedAt:S.savedAt||""});await gdSaveBase(S);toast("Seus dados foram enviados para o Google Drive")}
     else if(f.modifiedTime!==c.remoteMod){const o=await (await gfetch(`${GAPI}/drive/v3/files/${f.id}?alt=media`)).json();
       const localMudou=!!S.savedAt&&S.savedAt!==(c.pushedAt||"");const remotoNovo=(o.savedAt||"")>=(S.savedAt||"");
-      const primeira=!c.remoteMod;const base=o&&o.v===2&&localMudou&&!primeira?await gdLoadBase():null;
-      const usarRemoto=!S.savedAt||!localMudou||(primeira&&S.exemplo)||(S.exemplo&&!o.exemplo)||(!base&&remotoNovo);
-      if(base&&!usarRemoto){const mg=m3(base,S,o,(S.savedAt||"")>(o.savedAt||""));normalize(mg);mg.savedAt=new Date().toISOString();await gdBackup("antes-de-juntar",S);S=mg;MEMO={};UI.draft=null;UI.dirty=false;await persistLocal();await writeFile();await gdPush(f.id);toast("Juntei as mudanças deste aparelho com as do outro");render()}
+      const primeira=!c.remoteMod;let base=o&&o.v===2&&localMudou&&!primeira?await gdLoadBase():null;const semBase=o&&o.v===2&&localMudou&&!base;if(semBase)base={};
+      const usarRemoto=!S.savedAt||!localMudou||(primeira&&S.exemplo)||(S.exemplo&&!o.exemplo);
+      if(base&&!usarRemoto){const mg=m3(base,S,o,!semBase&&(S.savedAt||"")>(o.savedAt||""));normalize(mg);mg.savedAt=new Date().toISOString();await gdBackup("antes-de-juntar",S);S=mg;MEMO={};UI.draft=null;UI.dirty=false;await persistLocal();await writeFile();await gdPush(f.id);toast("Juntei as mudanças deste aparelho com as do outro");render()}
       else if(o&&o.v===2&&usarRemoto){let aviso="Dados atualizados com o Google Drive";if(localMudou&&!S.exemplo){await gdBackup("conflito-aparelho");aviso="Os dados do Drive eram mais novos. A versão deste aparelho ficou guardada nos backups."}await gdApply(o);gdSetCfg({fileId:f.id,remoteMod:f.modifiedTime,pushedAt:S.savedAt||""});toast(aviso)}
       else if(o&&o.v===2){if(!o.exemplo)await gdBackup("conflito-nuvem",o);await gdPush(f.id);if(!o.exemplo)toast("Este aparelho tinha mudanças mais novas. A versão anterior do Drive ficou guardada nos backups.")}
       else await gdPush(f.id)}
@@ -1593,10 +1594,11 @@ function buildDoc(){
   const json=JSON.stringify(S).replace(/</g,"\\u003c");
   return '<!DOCTYPE html>\n<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Minhas Finanças</title>\n<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%23111827%22%2F%3E%3Cg%20transform%3D%22translate%2814%2014%29%20scale%281.5%29%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%207.5A2.5%202.5%200%200%201%205.5%205H18v2.5%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%227.5%22%20width%3D%2218%22%20height%3D%2212%22%20rx%3D%222.5%22%2F%3E%3C%2Fg%3E%3Ccircle%20cx%3D%2238.5%22%20cy%3D%2234.5%22%20r%3D%222.6%22%20fill%3D%22%2322c55e%22%2F%3E%3C%2Fsvg%3E">\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">\n<style id="css">'+css+'</style>\n</head>\n<body>\n<div id="root"></div>\n<div class="tip" id="tip" role="tooltip"></div>\n<script id="state" type="application/json">'+json+'<\/script>\n<script id="app">'+app+'<\/script>\n</body>\n</html>\n';
 }
-function scheduleSave(ms){setStatus("pending");clearTimeout(saveTimer);saveTimer=setTimeout(doSave,ms==null?1400:ms)}
+let SAVE_USER=false;
+function scheduleSave(ms,auto){if(!auto)SAVE_USER=true;setStatus("pending");clearTimeout(saveTimer);saveTimer=setTimeout(doSave,ms==null?1400:ms)}
 async function doSave(){
   if(UI.demo){setStatus("demo");return}
-  if(LOCAL){if(LOCKED)return;S.savedAt=new Date().toISOString();if(!(await persistLocal())){setStatus("error");return}
+  if(LOCAL){if(LOCKED)return;if(SAVE_USER||!S.savedAt)S.savedAt=new Date().toISOString();SAVE_USER=false;if(!(await persistLocal())){setStatus("error");return}
     const ok=await writeFile();setStatus(ok?"savedfile":FH?"needfile":"savedlocal");gdQueue();return}
   if(!artReady)return;
   if(!ART){setStatus("local");return}
@@ -1645,7 +1647,7 @@ async function fetchMercado(force){
   const tk=String((S.cfg&&S.cfg.brapiToken)||"").trim();
   for(const t of b3){try{const j=await getJSON("https://brapi.dev/api/quote/"+encodeURIComponent(t)+(tk?"?token="+encodeURIComponent(tk):""));const q=j&&j.results&&j.results[0];if(q&&+q.regularMarketPrice>0){const pv=+q.regularMarketPreviousClose;precos[t]={preco:+q.regularMarketPrice,prev:pv>0?pv:null,var:isFinite(+q.regularMarketChangePercent)?+q.regularMarketChangePercent:(pv>0?(q.regularMarketPrice/pv-1)*100:null),data:String(q.regularMarketTime||hoje).slice(0,10),fonte:"brapi.dev"}}else erros.push(t)}catch(e){erros.push(t)}}
   S.mercado={at:new Date().toISOString(),ind,cot:{precos,atualizado:new Date().toISOString()},erros,invalidos,semToken:!tk&&b3.length>0,dia:m.dia};
-  fetching=false;UI.mktMsg="";MEMO={};scheduleSave(300);softRender();
+  fetching=false;UI.mktMsg="";MEMO={};scheduleSave(300,true);softRender();
 }
 const B3_RE=/^[A-Z]{4}\d{1,2}[A-Z]?$/;function tickOk(t){t=String(t||"").toUpperCase().trim();return !!CRYPTO[t]||B3_RE.test(t)}
 /* ---------- carteira no dia (abertura, meio do dia e fechamento) ---------- */
@@ -1659,7 +1661,7 @@ async function checarPregao(){
   const sl=slotAtual();if(!sl)return;const hoje=isoD(new Date());const m=S.mercado||{};const dia=m.dia&&m.dia.data===hoje?m.dia:{data:hoje,slots:{}};
   if(dia.slots[sl[0]])return;
   await fetchMercado(true);const r=diaCarteira();if(!r)return;
-  const mm=S.mercado||{};mm.dia=dia;dia.slots[sl[0]]={at:new Date().toISOString(),delta:r.delta,pct:r.pct,pat:r.pat};S.mercado=mm;scheduleSave(300);
+  const mm=S.mercado||{};mm.dia=dia;dia.slots[sl[0]]={at:new Date().toISOString(),delta:r.delta,pct:r.pct,pat:r.pat};S.mercado=mm;scheduleSave(300,true);
   const txt=`Sua carteira ${r.delta>=0?"valorizou":"desvalorizou"} ${pctS(r.pct,2)} hoje (${r.delta>=0?"+":"−"}${brl(Math.abs(r.delta))}).`+(r.it[0]?` Destaque: ${r.it[0].t} ${pctS(r.it[0].var/100,2)}.`:"");
   toast(sl[1]+": "+txt);
   try{if(S.cfg&&S.cfg.avisos&&"Notification" in window&&Notification.permission==="granted")new Notification("Minhas Finanças · "+sl[1],{body:txt,tag:"pregao-"+sl[0]})}catch(e){}
@@ -1794,6 +1796,7 @@ function loanInfo(L){
 }
 function cardById(id,s){return (s||S).cartoes.find(c=>c.id===id)}
 function closingDate(k,X){const p=pk(X);const c=+k.close||1,du=+k.due||10;return c<du?new Date(p.y,p.m,c):new Date(p.y,p.m-1,c)}
+function fatAbertaX(k){return faturaKey(isoD(TODAY),k)}
 function faturaKey(ds,k){const d=toDate(ds),base=keyOf(ds);for(let i=0;i<3;i++){const X=addM(base,i);if(d<closingDate(k,X))return X}return addM(base,2)}
 function monthData(X){
   if(MEMO[X])return MEMO[X];
@@ -2079,7 +2082,7 @@ function cRec(d){
 }
 function fatStatus(k,X){if(isPaidX(X,"fat-"+k.id))return"Paga";if(X<CUR)return"Fechada";if(X===CUR&&TODAY>=closingDate(k,X))return"Fechada";return"Aberta"}
 function ccardHTML(k,X){return `<div class="ccard" style="background:${esc(k.color)}"><div class="r"><span class="bank">${esc(k.bank)}</span><span class="tag">${fatStatus(k,X)}</span></div><div class="r"><span class="chip"></span><span class="nm">${esc(String(k.name).toUpperCase())}</span><span class="nfc">${ic("nfc")}</span></div><div class="r"><div><small>VENCE</small><b class="num">${pad(Math.min(+k.due||1,dimK(X)))}/${pad(pk(X).m+1)}</b></div><div style="text-align:right"><small>LIMITE LIVRE</small><b class="num">${brl(limiteLivre(k))}</b></div></div></div>`}
-function carousel(idx,X,scope){return `<div class="car"><div class="car-track" style="transform:translateX(calc(${-idx} * (82% + 10px)))">${S.cartoes.map((k,i)=>`<div class="ccard-wrap" style="flex:0 0 82%;cursor:${i===idx?"default":"pointer"}" data-act="cpick" data-scope="${scope}" data-i="${i}">${ccardHTML(k,X)}</div>`).join("")}</div></div>`}
+function carousel(idx,X,scope){return `<div class="car"><div class="car-track" style="transform:translateX(calc(${-idx} * (82% + 10px)))">${S.cartoes.map((k,i)=>`<div class="ccard-wrap" style="flex:0 0 82%;cursor:${i===idx?"default":"pointer"}" data-act="cpick" data-scope="${scope}" data-i="${i}">${ccardHTML(k,typeof X==="function"?X(k):X)}</div>`).join("")}</div></div>`}
 function nxtTiles(k,X0){
   const ms=[0,1,2].map(i=>addM(X0,i)),vs=ms.map(X=>monthData(X).fat[k.id]||0),mx=Math.max.apply(null,vs.concat([1]));
   const ys=vs.map(v=>round2(70-(v/mx)*32)),xs=[50,150,250],ym=(ys[0]+ys[1])/2;
@@ -2090,13 +2093,14 @@ function cCartaoOv(d){
   let h=`<section class="card" style="grid-area:cart"><div class="ch"><div><h2><a class="hl" href="#cartoes">Cartões</a></h2><div class="sub">Fatura de ${MESES[pk(UI.mk).m].toLowerCase()}</div></div><a class="badge b-blue go" href="#cartoes" title="Abrir Cartões" aria-label="Abrir Cartões">${ic("card")}</a></div>`;
   if(!S.cartoes.length)return h+`<div class="empty">Nenhum cartão cadastrado.</div><a class="btn sm" href="#cartoes">Adicionar cartão</a></section>`;
   if(UI.ovCard>=S.cartoes.length)UI.ovCard=0;
-  const k=S.cartoes[UI.ovCard];
-  h+=`<div class="cartov"><div class="c1">`+big(d.fat[k.id]||0,"lg");
+  const k=S.cartoes[UI.ovCard];const ab=UI.mk===CUR;const XF=ab?fatAbertaX(k):UI.mk;const fv=XF===UI.mk?(d.fat[k.id]||0):(monthData(XF).fat[k.id]||0);
+  h=h.replace(`<div class="sub">Fatura de ${MESES[pk(UI.mk).m].toLowerCase()}</div>`,`<div class="sub">${ab?`Fatura aberta · vence ${pad(Math.min(+k.due||1,dimK(XF)))}/${pad(pk(XF).m+1)}`:`Fatura de ${MESES[pk(UI.mk).m].toLowerCase()}`}</div>`);
+  h+=`<div class="cartov"><div class="c1">`+big(fv,"lg");
   if(S.contas.length&&UI.mk===CUR){const ab=sum(S.cartoes.filter(c=>!isPaidX(CUR,"fat-"+c.id)).map(c=>d.fat[c.id]||0));h+=`<div class="sub">Saldo após pagar as faturas: <b class="num" style="color:var(--${saldoContas()-ab<0?"bad":"ink"})">${brl(saldoContas()-ab)}</b></div>`}
   h+=`<div class="row" style="justify-content:space-between"><a class="btn sm" href="#cartoes" data-act="gocard" data-id="${k.id}">Ver fatura</a><div class="row" style="gap:8px"><button class="iconbtn" data-act="cnav" data-scope="ov" data-d="-1" aria-label="Cartão anterior">${ic("left")}</button><button class="iconbtn" data-act="cnav" data-scope="ov" data-d="1" aria-label="Próximo cartão">${ic("right")}</button></div></div>`;
-  h+=carousel(UI.ovCard,UI.mk,"ov");
+  h+=carousel(UI.ovCard,ab?fatAbertaX:UI.mk,"ov");
   const pr=parcelados([k],UI.mk).filter(x=>x.st!=="fim");const fut=round2(sum(pr.map(x=>x.rest))-sum(pr.filter(x=>x.st==="ativa").map(x=>x.val)));
-  return h+`</div><div class="c2"><div class="cap">Próximas faturas</div>${nxtTiles(k,UI.mk)}${pr.length?`<a class="sub hl" href="#cartoes" data-act="gocard" data-id="${k.id}">${pr.length} ${pr.length===1?"compra parcelada":"compras parceladas"} · ${brl(fut)} já comprometidos nas próximas faturas</a>`:""}</div></div></section>`;
+  return h+`</div><div class="c2"><div class="cap">Próximas faturas</div>${nxtTiles(k,XF)}${pr.length?`<a class="sub hl" href="#cartoes" data-act="gocard" data-id="${k.id}">${pr.length} ${pr.length===1?"compra parcelada":"compras parceladas"} · ${brl(fut)} já comprometidos nas próximas faturas</a>`:""}</div></div></section>`;
 }
 function limiteLivre(k){let used=0;for(let i=0;i<24;i++){const X=addM(CUR,i);used+=monthData(X).card[k.id].filter(it=>!it.fixa).reduce((a,b)=>a+b.value,0)}if(isPaid("fat-"+k.id)&&UI.mk===CUR)used-=monthData(CUR).fat[k.id];return round2((+k.limit||0)-used)}
 function cInvOv(){
@@ -3120,7 +3124,7 @@ function vCartoes(){
     const k=cardById(UI.cardSel),items=d.card[k.id].slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))),ft=d.fat[k.id];
     const g=byCat(items,"despesa");const cl=closingDate(k,UI.mk);
     h+=`<div class="card"><div class="ch"><div class="tabs">${S.cartoes.map(c=>`<button class="${c.id===k.id?"on":""}" data-act="cardsel" data-id="${c.id}"><i style="background:${esc(c.color)}"></i>${esc(c.bank+" "+c.name)}</button>`).join("")}</div></div>
-    <div class="split split-a"><div style="display:flex;flex-direction:column;gap:16px"><div class="ch"><div><div class="sub">Fatura de ${MESES[pk(UI.mk).m].toLowerCase()} · fecha ${pad(cl.getDate())}/${pad(cl.getMonth()+1)}</div><div class="row" style="gap:8px;align-items:center">${big(ft,"lg")}${ft>0?stPill(fatSt(k,UI.mk)):""}</div></div><div class="row" style="gap:8px"><button class="btn sm" data-act="fatadj" data-id="${k.id}" data-k="${UI.mk}">${ic("edit")}Reajustar fatura</button><button class="iconbtn" data-act="cnav" data-scope="tab" data-d="-1" aria-label="Cartão anterior">${ic("left")}</button><button class="iconbtn" data-act="cnav" data-scope="tab" data-d="1" aria-label="Próximo cartão">${ic("right")}</button></div></div>
+    <div class="split split-a"><div style="display:flex;flex-direction:column;gap:16px"><div class="ch"><div><div class="sub">${UI.mk===fatAbertaX(k)?"Fatura aberta · "+MESES[pk(UI.mk).m].toLowerCase():"Fatura de "+MESES[pk(UI.mk).m].toLowerCase()} · fecha ${pad(cl.getDate())}/${pad(cl.getMonth()+1)}</div><div class="row" style="gap:8px;align-items:center">${big(ft,"lg")}${ft>0?stPill(fatSt(k,UI.mk)):""}</div></div><div class="row" style="gap:8px"><button class="btn sm" data-act="fatadj" data-id="${k.id}" data-k="${UI.mk}">${ic("edit")}Reajustar fatura</button><button class="iconbtn" data-act="cnav" data-scope="tab" data-d="-1" aria-label="Cartão anterior">${ic("left")}</button><button class="iconbtn" data-act="cnav" data-scope="tab" data-d="1" aria-label="Próximo cartão">${ic("right")}</button></div></div>
     ${carousel(S.cartoes.findIndex(c=>c.id===k.id),UI.mk,"tab")}
     <div class="cap">Próximas faturas</div>${nxtTiles(k,UI.mk)}</div>
     <div style="display:flex;flex-direction:column;gap:16px;min-width:0"><div class="ch"><div><h2>No que foi gasto</h2><div class="sub">Por categoria e subcategoria</div></div></div>${breakdown(g,ft,{open:false,empty:"Nada nesta fatura."})}</div></div></div>`;
@@ -3650,10 +3654,10 @@ root.addEventListener("click",e=>{
     case"hoje":UI.mk=CUR;UI.daySel=null;saveMonth(CUR);render();break;
     case"day":UI.daySel=+el.dataset.day;render();break;
     case"ovcard":UI.ovCard=+el.dataset.i;render();break;
-    case"cnav":{const n=S.cartoes.length;if(!n)break;const dd=+el.dataset.d;if(el.dataset.scope==="ov")UI.ovCard=(UI.ovCard+dd+n)%n;else{const i=S.cartoes.findIndex(c=>c.id===UI.cardSel);UI.cardSel=S.cartoes[(i+dd+n)%n].id}render();break}
+    case"cnav":{const n=S.cartoes.length;if(!n)break;const dd=+el.dataset.d;if(el.dataset.scope==="ov")UI.ovCard=(UI.ovCard+dd+n)%n;else{const i=S.cartoes.findIndex(c=>c.id===UI.cardSel);UI.cardSel=S.cartoes[(i+dd+n)%n].id;if(!MKV.cartoes)cartAuto()}render();break}
     case"cpick":{const i=+el.dataset.i;if(el.dataset.scope==="ov")UI.ovCard=i;else UI.cardSel=S.cartoes[i].id;render();break}
-    case"gocard":if(el.dataset.id){UI.cardSel=el.dataset.id}break;
-    case"cardsel":UI.cardSel=el.dataset.id;render();break;
+    case"gocard":if(el.dataset.id){UI.cardSel=el.dataset.id;delete MKV.cartoes}break;
+    case"cardsel":UI.cardSel=el.dataset.id;if(!MKV.cartoes)cartAuto();render();break;
     case"iso":UI.iso=el.dataset.id&&UI.iso!==el.dataset.id?el.dataset.id:null;render();break;
     case"evotype":UI.evoType=el.dataset.v;UI.iso=null;render();break;
     case"evon":UI.evoN=+el.dataset.v;render();break;
@@ -4061,14 +4065,14 @@ document.addEventListener("pointerdown",e=>{const el=e.target.closest&&e.target.
 document.addEventListener("focusin",e=>{const el=e.target.closest&&e.target.closest("[data-tip]");if(el){const r=el.getBoundingClientRect();showTip(el,r.left+r.width/2,r.bottom)}else hideTip()});
 window.addEventListener("scroll",hideTip,{passive:true});
 
-function resumoAuto(){const P=addM(CUR,-1);if(S.exemplo||S.resumoVisto===P||TODAY.getDate()>15)return;const d=monthData(P);if(!(d.D>0||d.R>0))return;UI.modal={type:"resumo",X:P};S.resumoVisto=P;scheduleSave(3000)}
+function resumoAuto(){const P=addM(CUR,-1);if(S.exemplo||S.resumoVisto===P||TODAY.getDate()>15)return;const d=monthData(P);if(!(d.D>0||d.R>0))return;UI.modal={type:"resumo",X:P};S.resumoVisto=P;scheduleSave(3000,true)}
 try{UI.priv=localStorage.getItem("mf-priv")==="1"}catch(_){}
 let booted=false;
 /* ---------- modo demonstração (dados fictícios, nada é salvo) ---------- */
 let REAL=null;
 function demoOn(silent){if(UI.demo)return;if(UI.dirty){toast("Salve ou descarte as alterações antes");return}REAL=S;S=makeDefault();normalize(S);S.exemplo=true;MEMO={};UI.draft=null;UI.demo=true;UI.modal=null;try{localStorage.setItem("mf-demo","1")}catch(_){}setStatus("demo");render();if(!silent)toast("Modo demonstração: dados fictícios. Seus dados continuam guardados.")}
 function demoOff(){if(!UI.demo)return;if(REAL)S=REAL;REAL=null;MEMO={};UI.draft=null;UI.dirty=false;UI.demo=false;UI.modal=null;try{localStorage.removeItem("mf-demo")}catch(_){}setStatus(FH&&FHperm==="granted"?"savedfile":"savedlocal");render();gdQueue(500);toast("De volta aos seus dados")}
-function afterUnlock(){if(booted)return;booted=true;let demo0=false;try{demo0=localStorage.getItem("mf-demo")==="1"}catch(_){}if(!demo0)resumoAuto();root.classList.add("intro");render();setTimeout(()=>root.classList.remove("intro"),700);
+function afterUnlock(){if(booted)return;booted=true;if(UI.view==="cartoes"&&!MKV.cartoes)cartAuto();let demo0=false;try{demo0=localStorage.getItem("mf-demo")==="1"}catch(_){}if(!demo0)resumoAuto();root.classList.add("intro");render();setTimeout(()=>root.classList.remove("intro"),700);
   if(LOCAL){initFile().then(()=>fetchMercado(false)).then(()=>checarPregao());setInterval(()=>{checarPregao()},60000)}
   if(GDRET&&GDRET.err&&gdCfg().on){GD.state="needlogin";if(GDRET.err!=="interaction_required"&&GDRET.err!=="login_required"&&GDRET.err!=="consent_required")toast("Não foi possível entrar no Google ("+GDRET.err+")")}
   if(GDRET&&GDRET.ok)toast("Conectado ao Google Drive");

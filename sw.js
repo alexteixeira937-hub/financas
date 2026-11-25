@@ -1,5 +1,5 @@
 /* Minhas Finanças: guarda o app para abrir sem internet. Os dados não passam por aqui. */
-const CACHE = "mf-v12";
+const CACHE = "mf-v13";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
